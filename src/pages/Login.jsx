@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../store/authStore'
 
+// Seeding is handled exclusively in useHabits.initHabits to avoid race-condition duplicates.
+// Login only ensures the profile row exists (required by the habits FK constraint).
 async function ensureProfile(userId) {
   const { error } = await supabase
     .from('profiles')
@@ -12,34 +14,17 @@ async function ensureProfile(userId) {
 
 export default function Login() {
   const [email, setEmail] = useState('')
-  const [code, setCode] = useState('')
-  const [status, setStatus] = useState('idle') // idle | sending | codeSent | verifying | seeding | error
+  const [status, setStatus] = useState('idle') // idle | sending | sent | seeding | error
   const [errorMsg, setErrorMsg] = useState('')
-  const [resendCountdown, setResendCountdown] = useState(0)
-  const countdownRef = useRef(null)
   const { user } = useAuthStore()
   const navigate = useNavigate()
 
+  // If already logged in, redirect immediately
   useEffect(() => {
-    if (user) handlePostLogin(user.id)
+    if (user) {
+      handlePostLogin(user.id)
+    }
   }, [user])
-
-  useEffect(() => {
-    return () => clearInterval(countdownRef.current)
-  }, [])
-
-  function startResendTimer() {
-    setResendCountdown(30)
-    countdownRef.current = setInterval(() => {
-      setResendCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(countdownRef.current)
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-  }
 
   async function handlePostLogin(userId) {
     setStatus('seeding')
@@ -47,7 +32,7 @@ export default function Login() {
     navigate('/tracker', { replace: true })
   }
 
-  async function handleSendCode(e) {
+  async function handleSendLink(e) {
     e.preventDefault()
     if (!email.trim()) return
 
@@ -56,44 +41,17 @@ export default function Login() {
 
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim().toLowerCase(),
-      options: { shouldCreateUser: true },
+      options: {
+        emailRedirectTo: window.location.origin + '/tracker',
+      },
     })
 
     if (error) {
       setErrorMsg(error.message)
       setStatus('error')
     } else {
-      setStatus('codeSent')
-      setCode('')
-      startResendTimer()
+      setStatus('sent')
     }
-  }
-
-  async function handleVerify(e) {
-    e.preventDefault()
-    if (code.trim().length < 6) return
-
-    setStatus('verifying')
-    setErrorMsg('')
-
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: email.trim().toLowerCase(),
-      token: code.trim(),
-      type: 'email',
-    })
-
-    if (error) {
-      setErrorMsg(error.message)
-      setStatus('codeSent')
-    } else if (data?.session) {
-      handlePostLogin(data.session.user.id)
-    }
-  }
-
-  async function handleResend() {
-    if (resendCountdown > 0) return
-    clearInterval(countdownRef.current)
-    await handleSendCode({ preventDefault: () => {} })
   }
 
   if (status === 'seeding') {
@@ -109,10 +67,12 @@ export default function Login() {
 
   return (
     <div style={styles.page}>
+      {/* Background blobs */}
       <div style={styles.blob1} />
       <div style={styles.blob2} />
 
       <div style={styles.card}>
+        {/* Logo mark */}
         <div style={styles.logoMark}>
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
             <circle cx="14" cy="14" r="14" fill="#5b5bd6" />
@@ -129,67 +89,26 @@ export default function Login() {
         <h1 style={styles.appName}>Loopd</h1>
         <p style={styles.tagline}>Plan. Live. Reflect. Repeat.</p>
 
-        {status === 'codeSent' || status === 'verifying' ? (
-          <form onSubmit={handleVerify} style={styles.form}>
-            <p style={styles.codePrompt}>
-              We sent a 6-digit code to <strong>{email}</strong>
+        {status === 'sent' ? (
+          <div style={styles.sentBox}>
+            <div style={styles.sentIcon}>✉️</div>
+            <p style={styles.sentTitle}>Check your inbox</p>
+            <p style={styles.sentSub}>
+              We sent a magic link to <strong>{email}</strong>.
+              <br />Tap it to sign in — no password needed.
             </p>
-
-            <label style={styles.label}>Verification code</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              placeholder="123456"
-              value={code}
-              onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              style={{ ...styles.input, ...styles.codeInput }}
-              autoFocus
-              autoComplete="one-time-code"
-              maxLength={6}
-              required
-            />
-
-            {errorMsg && <p style={styles.errorMsg}>{errorMsg}</p>}
-
+            <p style={styles.pwaHint}>
+              After tapping the link, close Safari and reopen Loopd from your home screen — you'll stay signed in.
+            </p>
             <button
-              type="submit"
-              disabled={status === 'verifying' || code.trim().length < 6}
-              style={{
-                ...styles.button,
-                opacity: (status === 'verifying' || code.trim().length < 6) ? 0.6 : 1,
-                cursor: (status === 'verifying' || code.trim().length < 6) ? 'not-allowed' : 'pointer',
-              }}
+              style={styles.resendBtn}
+              onClick={() => setStatus('idle')}
             >
-              {status === 'verifying' ? (
-                <span style={styles.btnContent}>
-                  <span style={styles.btnSpinner} />
-                  Verifying…
-                </span>
-              ) : (
-                'Verify code'
-              )}
+              Use a different email
             </button>
-
-            <div style={styles.resendRow}>
-              {resendCountdown > 0 ? (
-                <span style={styles.resendHint}>Resend in {resendCountdown}s</span>
-              ) : (
-                <button type="button" style={styles.resendBtn} onClick={handleResend}>
-                  Resend code
-                </button>
-              )}
-              <button
-                type="button"
-                style={styles.changeEmailBtn}
-                onClick={() => { setStatus('idle'); setCode(''); setErrorMsg('') }}
-              >
-                Change email
-              </button>
-            </div>
-          </form>
+          </div>
         ) : (
-          <form onSubmit={handleSendCode} style={styles.form}>
+          <form onSubmit={handleSendLink} style={styles.form}>
             <label style={styles.label}>Email address</label>
             <input
               type="email"
@@ -202,7 +121,9 @@ export default function Login() {
               required
             />
 
-            {status === 'error' && <p style={styles.errorMsg}>{errorMsg}</p>}
+            {status === 'error' && (
+              <p style={styles.errorMsg}>{errorMsg}</p>
+            )}
 
             <button
               type="submit"
@@ -219,11 +140,11 @@ export default function Login() {
                   Sending…
                 </span>
               ) : (
-                'Send code'
+                'Send magic link'
               )}
             </button>
 
-            <p style={styles.hint}>We'll email you a 6-digit code. No password needed.</p>
+            <p style={styles.hint}>No password. No sign-up form. Just your email.</p>
           </form>
         )}
       </div>
@@ -320,13 +241,6 @@ const styles = {
     boxSizing: 'border-box',
     transition: 'border-color 0.15s, box-shadow 0.15s',
   },
-  codeInput: {
-    fontSize: '24px',
-    fontWeight: '600',
-    letterSpacing: '0.3em',
-    textAlign: 'center',
-    padding: '14px',
-  },
   button: {
     width: '100%',
     padding: '13px 20px',
@@ -356,44 +270,6 @@ const styles = {
     animation: 'spin 0.7s linear infinite',
     display: 'inline-block',
   },
-  codePrompt: {
-    fontSize: '13px',
-    color: '#6b7280',
-    textAlign: 'center',
-    margin: '0 0 4px',
-    lineHeight: '1.5',
-  },
-  resendRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: '2px',
-  },
-  resendHint: {
-    fontSize: '12px',
-    color: '#9ca3af',
-    fontFamily: "'Inter', system-ui, sans-serif",
-  },
-  resendBtn: {
-    fontSize: '13px',
-    fontWeight: '500',
-    color: '#5b5bd6',
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '4px 0',
-    fontFamily: "'Inter', system-ui, sans-serif",
-  },
-  changeEmailBtn: {
-    fontSize: '13px',
-    fontWeight: '400',
-    color: '#9ca3af',
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '4px 0',
-    fontFamily: "'Inter', system-ui, sans-serif",
-  },
   hint: {
     fontSize: '12px',
     color: '#9ca3af',
@@ -407,6 +283,53 @@ const styles = {
     borderRadius: '8px',
     padding: '8px 12px',
     margin: '0',
+  },
+  sentBox: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '8px 0',
+  },
+  sentIcon: {
+    fontSize: '40px',
+    lineHeight: 1,
+    marginBottom: '4px',
+  },
+  sentTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#1a1a2e',
+    margin: 0,
+  },
+  sentSub: {
+    fontSize: '14px',
+    color: '#6b7280',
+    margin: 0,
+    lineHeight: '1.6',
+    textAlign: 'center',
+  },
+  pwaHint: {
+    fontSize: '12px',
+    color: '#9ca3af',
+    margin: '0',
+    lineHeight: '1.5',
+    textAlign: 'center',
+    padding: '8px 12px',
+    background: 'rgba(91,91,214,0.06)',
+    borderRadius: '8px',
+    border: '1px solid rgba(91,91,214,0.12)',
+  },
+  resendBtn: {
+    marginTop: '12px',
+    fontSize: '13px',
+    fontWeight: '500',
+    color: '#5b5bd6',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '4px 8px',
+    fontFamily: "'Inter', system-ui, sans-serif",
   },
   spinner: {
     width: '28px',
