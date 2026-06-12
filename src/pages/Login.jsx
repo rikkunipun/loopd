@@ -47,7 +47,7 @@ export default function Login() {
     })
 
     if (error) {
-      setErrorMsg(error.message)
+      setErrorMsg(error.message || error.error_description || 'Something went wrong. Please try again.')
       setStatus('error')
     } else {
       setStatus('sent')
@@ -122,7 +122,7 @@ export default function Login() {
             />
 
             {status === 'error' && (
-              <p style={styles.errorMsg}>{errorMsg}</p>
+              <p style={styles.errorMsg}>{typeof errorMsg === 'string' ? errorMsg : 'Something went wrong. Please try again.'}</p>
             )}
 
             <button
