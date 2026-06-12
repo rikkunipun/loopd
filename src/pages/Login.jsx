@@ -12,6 +12,24 @@ async function ensureProfile(userId) {
   if (error) console.error('[Login] profile upsert error:', error)
 }
 
+function extractErrorMessage(error) {
+  if (!error) return 'Something went wrong. Please try again.'
+  if (error.status === 429 || String(error.code).includes('rate_limit') || String(error.message).includes('rate limit')) {
+    return 'Too many attempts — please wait a few minutes and try again.'
+  }
+  return (
+    error.message ||
+    error.error_description ||
+    error.msg ||
+    (error.status ? `Error ${error.status}` : null) ||
+    error.code ||
+    error.name ||
+    (typeof error === 'string' ? error : null) ||
+    JSON.stringify(error) ||
+    'Something went wrong. Please try again.'
+  )
+}
+
 export default function Login() {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
@@ -62,7 +80,8 @@ export default function Login() {
     })
 
     if (error) {
-      setErrorMsg(error.message || error.error_description || 'Something went wrong. Please try again.')
+      console.error('OTP send error:', JSON.stringify(error, null, 2))
+      setErrorMsg(extractErrorMessage(error))
       setStatus('error')
     } else {
       setStatus('codeSent')
@@ -85,7 +104,8 @@ export default function Login() {
     })
 
     if (error) {
-      setErrorMsg(error.message || error.error_description || 'Invalid code. Please try again.')
+      console.error('OTP verify error:', JSON.stringify(error, null, 2))
+      setErrorMsg(extractErrorMessage(error))
       setStatus('codeSent')
     } else if (data?.session) {
       handlePostLogin(data.session.user.id)
