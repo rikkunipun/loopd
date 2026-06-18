@@ -92,7 +92,7 @@ export default function Login() {
 
   async function handleVerify(e) {
     e.preventDefault()
-    if (code.trim().length < 6) return
+    if (!code.trim()) return
 
     setStatus('verifying')
     setErrorMsg('')
@@ -154,7 +154,7 @@ export default function Login() {
         {status === 'codeSent' || status === 'verifying' ? (
           <form onSubmit={handleVerify} style={styles.form}>
             <p style={styles.codePrompt}>
-              We sent a 6-digit code to <strong>{email}</strong>
+              We sent a code to <strong>{email}</strong>
             </p>
 
             <label style={styles.label}>Verification code</label>
@@ -162,13 +162,12 @@ export default function Login() {
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
-              placeholder="123456"
+              placeholder="Enter code"
               value={code}
-              onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
               style={{ ...styles.input, ...styles.codeInput }}
               autoFocus
               autoComplete="one-time-code"
-              maxLength={6}
               required
             />
 
@@ -178,11 +177,11 @@ export default function Login() {
 
             <button
               type="submit"
-              disabled={status === 'verifying' || code.trim().length < 6}
+              disabled={status === 'verifying' || !code.trim()}
               style={{
                 ...styles.button,
-                opacity: (status === 'verifying' || code.trim().length < 6) ? 0.6 : 1,
-                cursor: (status === 'verifying' || code.trim().length < 6) ? 'not-allowed' : 'pointer',
+                opacity: (status === 'verifying' || !code.trim()) ? 0.6 : 1,
+                cursor: (status === 'verifying' || !code.trim()) ? 'not-allowed' : 'pointer',
               }}
             >
               {status === 'verifying' ? (
@@ -249,7 +248,7 @@ export default function Login() {
               )}
             </button>
 
-            <p style={styles.hint}>We'll email you a 6-digit code. No password needed.</p>
+            <p style={styles.hint}>We'll email you a code. No password needed.</p>
           </form>
         )}
       </div>
